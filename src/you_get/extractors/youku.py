@@ -77,7 +77,10 @@ class Youku(VideoExtractor):
         self.api_error_code = None
         self.api_error_msg = None
 
+        # 0502
         self.ccode = '0564'
+        # https://g.alicdn.com/kplayer/kuplayer/4.1.61-xmedia/index.js.
+        self.ccode = '0502'
         # Found in http://g.alicdn.com/player/ykplayer/0.5.64/youku-player.min.js
         # grep -oE '"[0-9a-zA-Z+/=]{256}"' youku-player.min.js
         self.ckey = 'DIl58SLFxFNndSV1GFNnMQVYkx1PP5tKe1siZu/86PR1u/Wh1Ptd+WOZsHHWxysSfAOhNJpdVWsdVJNsfJ8Sxd8WKVvNfAS8aS8fAOzYARzPyPc3JvtnPHjTdKfESTdnuTW6ZPvk2pNDh4uFzotgdMEFkzQ5wZVXl2Pf1/Y6hLK0OnCNxBj3+nb0v72gZ6b0td+WOZsHHWxysSo/0y9D2K42SaB8Y/+aD2K42SaB8Y/+ahU+WOZsHcrxysooUeND'
@@ -157,7 +160,14 @@ class Youku(VideoExtractor):
                     log.wtf('Cannot fetch vid')
 
         if kwargs.get('src') and kwargs['src'] == 'tudou':
+            # 0502
             self.ccode = '0512'
+            # https://g.alicdn.com/kplayer/kuplayer/4.1.61-xmedia/index.js.
+            self.ccode = '0502'
+
+        
+        if kwargs.get('ccode'):
+            self.ccode = kwargs['ccode']
 
         if kwargs.get('password') and kwargs['password']:
             self.password_protected = True
@@ -166,6 +176,8 @@ class Youku(VideoExtractor):
         self.utid = fetch_cna()
         time.sleep(3)
         self.youku_ups()
+
+        # print(self.api_data)
 
         if self.api_data.get('stream') is None:
             if self.api_error_code == -6001:  # wrong vid parsed from the page

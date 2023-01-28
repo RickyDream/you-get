@@ -13,6 +13,7 @@ import argparse
 import ssl
 from http import cookiejar
 from importlib import import_module
+from typing import List
 from urllib import request, parse, error
 
 from .version import __version__
@@ -1382,7 +1383,7 @@ def download_main(download, download_playlist, urls, playlist, **kwargs):
             download(url, **kwargs)
 
 
-def load_cookies(cookiefile):
+def load_cookies(cookiefile: str):
     global cookies
     if cookiefile.endswith('.txt'):
         # MozillaCookieJar treats prefix '#HttpOnly_' as comments incorrectly!
@@ -1444,6 +1445,47 @@ def load_cookies(cookiefile):
                 if not ignore_expires and c.is_expired(now):
                     continue
                 cookies.set_cookie(c)
+    
+    elif cookiefile.endswith('.json'):
+        from http.cookiejar import Cookie
+        cookies = cookiejar.MozillaCookieJar()
+        now = time.time()
+        ignore_discard, ignore_expires = False, False
+        with open(cookiefile, 'r', encoding='utf-8') as f:
+            cookieList: List[dict] = json.loads(f.read())
+
+ 
+        for item in cookieList:
+            
+            name = item.get('name')
+            value = item.get('value')
+            domain: str = item['domain']
+            path = item.get('path')
+            secure = item.get('secure')
+            expires = item.get('expiry')
+
+            discard = False
+            if not expires:
+                expires = None
+                discard = True
+
+            initial_dot = domain.startswith(".")
+
+            c = Cookie(0, name, value,
+                        None, False,
+                        domain, False, initial_dot,
+                        path, False,
+                        secure,
+                        expires,
+                        discard,
+                        None,
+                        None,
+                        {})
+            if not ignore_discard and c.discard:
+                continue
+            if not ignore_expires and c.is_expired(now):
+                continue
+            cookies.set_cookie(c)
 
     elif cookiefile.endswith(('.sqlite', '.sqlite3')):
         import sqlite3, shutil, tempfile
@@ -1804,6 +1846,155 @@ def script_main(download, download_playlist, **kwargs):
             print_version()
             log.i(args)
             raise
+        sys.exit(1)
+
+
+def download_resource_by_url(download, download_playlist, **kwargs):
+    logging.basicConfig(format='[%(levelname)s] %(message)s')
+
+    def print_version():
+        version = get_version(
+            kwargs['repo_path'] if 'repo_path' in kwargs else __version__
+        )
+        log.i(
+            'version {}, a tiny downloader that scrapes the web.'.format(
+                version
+            )
+        )
+
+    
+
+    
+    if kwargs.get('version'):
+        print_version()
+        sys.exit()
+
+    if kwargs.get('debug'):
+        # Set level of root logger to DEBUG
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    global force
+    global skip_existing_file_size_check
+    global dry_run
+    global json_output
+    global player
+    global extractor_proxy
+    global output_filename
+    global auto_rename
+    global insecure
+    global m3u8
+    global postfix
+    output_filename = kwargs.get('output_filename')
+    extractor_proxy = kwargs.get('extractor_proxy')
+
+    info_only = kwargs.get('info')
+    if kwargs.get('force'):
+        force = True
+    if kwargs.get('skip'):
+        skip_existing_file_size_check = True
+    if kwargs.get('auto_rename'):
+        auto_rename = True
+    URL = kwargs.get('url')
+    if URL:
+        dry_run = True
+    if kwargs.get('json'):
+        json_output = True
+        # to fix extractors not use VideoExtractor
+        dry_run = True
+        info_only = False
+
+    if kwargs.get('cookies'):
+        load_cookies(kwargs['cookies'])
+
+    if kwargs.get('m3u8'):
+        m3u8 = True
+
+    caption = True
+
+    if kwargs.get('player'):
+        player = kwargs['player']
+        caption = False
+
+    if kwargs.get('insecure'):
+        # ignore ssl
+        insecure = True
+
+   
+
+    if kwargs.get('no_proxy'):
+        set_http_proxy('')
+    else:
+        set_http_proxy(kwargs['http_proxy'])
+    if kwargs.get('socks_proxy'):
+        set_socks_proxy( kwargs['socks_proxy'] )
+
+    URLs = []
+    if kwargs.get('input_file'):
+        input_file = kwargs['input_file']
+        logging.debug('you are trying to load urls from %s', input_file)
+        inFile = open(input_file, 'r', encoding='utf8')
+        if kwargs.get('playlist'):
+            log.e(
+                "reading playlist from a file is unsupported "
+                "and won't make your life easier"
+            )
+            sys.exit(2)
+        URLs.extend(inFile.readlines())
+        inFile.close()
+    
+    URLs.extend(URL)
+
+    if not URLs:
+        sys.exit()
+
+    socket.setdefaulttimeout(kwargs.get('timeout', 60))
+
+    try:
+        extra = {'args': kwargs}
+        if extractor_proxy:
+            extra['extractor_proxy'] = extractor_proxy
+        if kwargs.get('stream_id'):
+            extra['stream_id'] = kwargs['stream_id']
+        download_main(
+            download, download_playlist,
+            URLs, kwargs.get('playlist'),
+            output_dir=kwargs.get('output_dir', './'), merge=not kwargs.get('no_merge'),
+            info_only=info_only, json_output=json_output, caption=caption,
+            password=kwargs.get('password'),
+            **extra
+        )
+    except KeyboardInterrupt:
+        sys.exit(1)
+    except UnicodeEncodeError:
+       
+        log.e(
+            '[error] oops, the current environment does not seem to support '
+            'Unicode.'
+        )
+        log.e('please set it to a UTF-8-aware locale first,')
+        log.e(
+            'so as to save the video (with some Unicode characters) correctly.'
+        )
+        log.e('you can do it like this:')
+        log.e('    (Windows)    % chcp 65001 ')
+        log.e('    (Linux)      $ LC_CTYPE=en_US.UTF-8')
+        sys.exit(1)
+    except Exception:
+        print_version()
+        log.i(kwargs)
+
+        log.e('[error] oops, something went wrong.')
+        log.e(
+            'don\'t panic, c\'est la vie. please try the following steps:'
+        )
+        log.e('  (1) Rule out any network problem.')
+        log.e('  (2) Make sure you-get is up-to-date.')
+        log.e('  (3) Check if the issue is already known, on')
+        log.e('        https://github.com/soimort/you-get/wiki/Known-Bugs')
+        log.e('        https://github.com/soimort/you-get/issues')
+        log.e('  (4) Run the command with \'--debug\' option,')
+        log.e('      and report this issue with the full output.')
+
         sys.exit(1)
 
 
